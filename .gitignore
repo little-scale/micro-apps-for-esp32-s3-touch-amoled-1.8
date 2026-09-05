@@ -1,0 +1,13 @@
+# Reproducible Arduino build output
+/build/
+/firmware/build/
+
+# Local editor, OS and Python files
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+~$*
