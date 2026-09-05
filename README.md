@@ -38,6 +38,95 @@ whenever it is enabled, while the settings badge uses green for a connected Wi-F
 This does not disable motion-driven
 pages or the movement trigger; it only suppresses the nine-float IMU stream when it is not needed.
 
+## OSC message reference
+
+OSC is sent over UDP. The default destination on the computer is port `9000`; the device listens
+for incoming OSC on port `9001`. Both ports and the destination IPv4 address can be changed on the
+device's `OSC` settings screen.
+
+Replace `<device>` in every address below with the configured device name. For example, a device
+named `device-1234` sends its XY controller as `/device-1234/xy0`. The same device name is used for
+the Wi-Fi hostname and BLE advertisement.
+
+OSC values use two data types:
+
+- `f` — 32-bit floating-point value
+- `i` — 32-bit signed integer
+
+Signatures such as `2f`, `3i` and `32f` below are shorthand for two floats, three integers and 32
+floats respectively. Argument order is significant.
+
+### Device to computer
+
+| OSC address | Type signature | Arguments and behaviour |
+| --- | ---: | --- |
+| `/<device>/xy0` | `2f` | `x y`; X is normalized from `0.0` left to `1.0` right, and Y from `0.0` bottom to `1.0` top |
+| `/<device>/faderN` | `f` | Normalized fader value; `N` is `0`–`3`, bottom is `0.0`, top is `1.0` |
+| `/<device>/buttonN` | `i` | Momentary button state; `N` is `0`–`3`, press sends `1`, release sends `0` |
+| `/<device>/note` | `3i` | `midiNote state velocity`; note is `0`–`127`, note-on state is `1` with velocity `20`–`127`, note-off is `state 0, velocity 0` |
+| `/<device>/spectrum0` | `32f` | Complete low-to-high 32-band multislider or FFT snapshot; fixed linear full-scale values without per-frame peak normalization |
+| `/<device>/collision/wall` | `2i f` | `ball wall impact`; ball is `0`–`7`, wall is listed below, impact is normalized `0.0`–`1.0` |
+| `/<device>/collision/ball` | `2i f` | `ballA ballB impact`; stable ball indices `0`–`7`, normalized impact `0.0`–`1.0` |
+| `/<device>/movement` | `i` | Shake/flick onset sends `1`; there is no release or zero message |
+| `/<device>/mic0` | `f` | Smoothed and noise-gated microphone energy from `0.0`–`1.0`; this is a loudness/density measure, not an audio waveform sample |
+| `/<device>/particle/wall` | `i f` | `wall size`; wall number is listed below and particle size is normalized `0.0`–`1.0` |
+| `/<device>/pendulumN` | `6f` | `ax ay bx by angle angularVelocity`; `N` is `0`–`3`, A/B positions are normalized, angle is degrees, angular velocity is degrees per second |
+| `/<device>/pendulumN/active` | `i` | Pendulum `N` was created (`1`) or deleted (`0`) |
+| `/<device>/pendulumN/centre` | `i` | Sends `1` when pendulum `N` crosses its instantaneous gravitational equilibrium point |
+| `/<device>/pendulumN/left` | `i` | Sends `1` when pendulum `N` reaches its left turning point |
+| `/<device>/pendulumN/right` | `i` | Sends `1` when pendulum `N` reaches its right turning point |
+| `/<device>/imu0` | `9f` | `ax ay az gx gy gz pitch roll yaw`; acceleration is in g, angular velocity in degrees per second, and orientation in degrees |
+
+`N` is replaced by the actual zero-based index, so fader 2 uses `/<device>/fader2`, not the
+literal address `/<device>/faderN`.
+
+Wall numbers are shared by the ball and particle pages:
+
+| Wall | Side |
+| ---: | --- |
+| `0` | Left |
+| `1` | Right |
+| `2` | Top |
+| `3` | Bottom |
+
+Ball slots are stable: deleting a ball does not renumber the others, and the next ball uses the
+lowest free index. The same rule applies to pendulum slots `0`–`3`. Sustained ball contact produces
+one collision onset rather than a new message on every physics frame. Pendulum event messages contain
+only `1`; there is no corresponding zero message.
+
+### Computer to device
+
+The computer can update the following controls using the same address and data format:
+
+| OSC address | Type signature | Accepted data |
+| --- | ---: | --- |
+| `/<device>/xy0` | `2f` | Normalized `x y` |
+| `/<device>/faderN` | `f` | Normalized value for fader `0`–`3` |
+| `/<device>/buttonN` | `i` | State `0` or `1` for button `0`–`3` |
+| `/<device>/note` | `3i` | `midiNote state velocity`; remote notes may be polyphonic |
+| `/<device>/note` | `2i` | Legacy `midiNote state` form, also accepted |
+| `/<device>/spectrum0` | `32f` | Complete 32-band bank, accepted only while the spectrum page is visible |
+| `/<device>/background` | `3i` | `red green blue`; each colour component is `0`–`255` and the display changes immediately |
+
+Incoming control messages wake and update the display but are never echoed back over OSC or BLE.
+For example, an incoming fader value changes the on-device fader without producing a return message.
+If a control is being touched locally, remote changes to that control are ignored until the finger is
+released. Collision, movement, microphone, particle, pendulum and IMU messages are device outputs only.
+
+### Timing and sensor details
+
+- XY and fader movement is limited to 50 messages per second, plus a final value on release.
+- The physical keyboard is single-touch and supports glissando; remote notes may be polyphonic.
+- Microphone energy is sent at 25 Hz. Raw audio is never transmitted or stored.
+- Pendulum state is limited to 25 Hz while drawing or simulating.
+- IMU output is 25 Hz by default or 50 Hz when selected. It is disabled by default and controlled by the pink IMU badge.
+- Acceleration uses the logical screen frame: +X right, +Y toward the top and +Z out of the display.
+- Pitch and roll are gravity-corrected. Yaw is relative and will drift because the board has no magnetometer.
+- Spectrum input, output and FFT processing stop while the spectrum page is hidden.
+
+For BLE packet layouts, fragmentation rules and the complete transport specification, see
+[PROTOCOL.md](PROTOCOL.md).
+
 ## Build
 
 The reproducible build uses [Arduino CLI](https://arduino.github.io/arduino-cli/latest/installation/) and Espressif's ESP32 Arduino core 3.3.10. Waveshare's V2 hardware libraries are pinned in `vendor/waveshare-v2`, so no separate library installation is required.
