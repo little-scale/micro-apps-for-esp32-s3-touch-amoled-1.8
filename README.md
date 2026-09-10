@@ -76,7 +76,7 @@ floats respectively. Argument order is significant.
 | `/<device>/collision/ball` | `2i f` | `ballA ballB impact`; stable ball indices `0`–`7`, normalized impact `0.0`–`1.0` |
 | `/<device>/movement` | `i` | Shake/flick onset sends `1`; there is no release or zero message |
 | `/<device>/mic0` | `f` | Smoothed and noise-gated microphone energy from `0.0`–`1.0`; this is a loudness/density measure, not an audio waveform sample |
-| `/<device>/particle/wall` | `i f` | `wall size`; wall number is listed below and particle size is normalized `0.0`–`1.0` |
+| `/<device>/particle/wall` | `i f` | `wall size`; wall number is listed below and the 3–14 px energy-linked particle size is normalized `0.0`–`1.0` in 12 steps |
 | `/<device>/pendulumN` | `6f` | `ax ay bx by angle angularVelocity`; `N` is `0`–`3`, A/B positions are normalized, angle is degrees, angular velocity is degrees per second |
 | `/<device>/pendulumN/active` | `i` | Pendulum `N` was created (`1`) or deleted (`0`) |
 | `/<device>/pendulumN/centre` | `i` | Sends `1` when pendulum `N` crosses its instantaneous gravitational equilibrium point |

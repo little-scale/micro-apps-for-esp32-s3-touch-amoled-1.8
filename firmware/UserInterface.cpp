@@ -74,7 +74,8 @@ constexpr float kParticleMaximumVelocity = 280.0f;
 constexpr float kParticleMinimumLifetime = 9.0f;
 constexpr float kParticleLifetimeRange = 3.0f;
 constexpr uint8_t kParticleMinimumSize = 3;
-constexpr uint8_t kParticleMaximumSize = 8;
+constexpr uint8_t kParticleMaximumSize = 14;
+constexpr float kParticleSizeVariation = 1.25f;
 constexpr uint32_t kParticleDrawIntervalUs = 33333;
 constexpr int16_t kLineWidth = 5;
 constexpr float kPi = 3.14159265358979323846f;
@@ -2230,8 +2231,15 @@ void UserInterface::updateParticles(float micEnergy, const ImuFrame &imu) {
         density * 45.0f;
     *available = ParticleState{};
     available->active = true;
-    available->size = kParticleMinimumSize + static_cast<uint8_t>(
-        nextParticleRandom() * (kParticleMaximumSize - kParticleMinimumSize + 1));
+    // Acoustic energy determines the particle-size tendency. A small random
+    // variation keeps similarly loud sounds from producing a uniform field.
+    const float sizeRange = kParticleMaximumSize - kParticleMinimumSize;
+    const float sizeVariation =
+        (nextParticleRandom() * 2.0f - 1.0f) * kParticleSizeVariation;
+    const float sizeOffset = constrain(density * sizeRange + sizeVariation,
+                                       0.0f, sizeRange);
+    available->size = kParticleMinimumSize +
+                      static_cast<uint8_t>(roundf(sizeOffset));
     available->x = kLineWidth + available->size * 0.5f + 2.0f;
     available->y = kControlH - 1 - kLineWidth - available->size * 0.5f -
                    2.0f - nextParticleRandom() * 16.0f;
