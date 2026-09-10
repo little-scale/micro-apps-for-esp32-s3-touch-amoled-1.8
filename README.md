@@ -2,7 +2,7 @@
 
 Classroom-oriented firmware for the **Waveshare ESP32-S3-Touch-AMOLED-1.8 V2 (368 × 448)**. It turns the board into a compact collection of touch, motion and microphone micro-apps with OSC over Wi-Fi and raw BLE data, including shake/flick trigger messages.
 
-The current eight-page implementation compiles for the V2 hardware and has been flashed and physically verified on an ESP32-S3-Touch-AMOLED-1.8 V2. Display orientation, touch mapping, IMU-driven interactions, OSC and BLE have all been exercised on the board.
+The current nine-page implementation compiles for the V2 hardware and has been flashed and physically verified on an ESP32-S3-Touch-AMOLED-1.8 V2. Display orientation, touch mapping, IMU-driven interactions, OSC and BLE have all been exercised on the board.
 
 ## What is on the screen
 
@@ -15,7 +15,8 @@ The current eight-page implementation compiles for the V2 hardware and has been 
 - Page 6: up to four touch-drawn IMU-gravity pendulums with editable bobs, tap-to-delete fixtures, indexed triggers, and a 2.5-second empty-space hold to centre them
 - Page 7: a microphone-energy particle field entering from the onboard microphone corner, steered by IMU tilt, with OSC pings when particles reach a wall
 - Page 8: a 32-band touch multislider with hold-to-capture microphone FFT snapshots
-- One shared bottom control that advances through the eight pages
+- Page 9: a generated 9 × 9 IMU tilt maze with a centre-starting marble, a corner goal, wall-collision messages and automatic new rounds; hold inside the maze for 3 seconds to generate another solvable map
+- One shared bottom control that advances through the nine pages
 
 The main screen contains no labels. Incoming OSC or BLE values update it without being echoed back. An incoming background-colour command changes the whole display immediately. The page control is local only and sends no network message.
 
@@ -77,6 +78,8 @@ floats respectively. Argument order is significant.
 | `/<device>/movement` | `i` | Shake/flick onset sends `1`; there is no release or zero message |
 | `/<device>/mic0` | `f` | Smoothed and noise-gated microphone energy from `0.0`–`1.0`; this is a loudness/density measure, not an audio waveform sample |
 | `/<device>/particle/wall` | `i f` | `wall size`; wall number is listed below and the 3–14 px energy-linked particle size is normalized `0.0`–`1.0` in 12 steps |
+| `/<device>/maze/collision` | `3i f` | `cellX cellY wall impact`; cell coordinates are `0`–`8`, wall uses the shared numbering below, and impact is normalized `0.0`–`1.0` |
+| `/<device>/maze/goal` | `i` | Sends `1` when the marble reaches the corner goal; a new maze follows automatically |
 | `/<device>/pendulumN` | `6f` | `ax ay bx by angle angularVelocity`; `N` is `0`–`3`, A/B positions are normalized, angle is degrees, angular velocity is degrees per second |
 | `/<device>/pendulumN/active` | `i` | Pendulum `N` was created (`1`) or deleted (`0`) |
 | `/<device>/pendulumN/centre` | `i` | Sends `1` when pendulum `N` crosses its instantaneous gravitational equilibrium point |
@@ -87,7 +90,7 @@ floats respectively. Argument order is significant.
 `N` is replaced by the actual zero-based index, so fader 2 uses `/<device>/fader2`, not the
 literal address `/<device>/faderN`.
 
-Wall numbers are shared by the ball and particle pages:
+Wall numbers are shared by the ball, particle and maze pages:
 
 | Wall | Side |
 | ---: | --- |
@@ -128,6 +131,7 @@ released. Collision, movement, microphone, particle, pendulum and IMU messages a
 - Pendulum state is limited to 25 Hz while drawing or simulating.
 - IMU output is 25 Hz by default or 50 Hz when selected. It is disabled by default and controlled by the pink IMU badge.
 - Acceleration uses the logical screen frame: +X right, +Y toward the top and +Z out of the display.
+- The maze is generated as a perfect maze, so every cell and every selected corner goal is reachable. Its collision and goal events are OSC-only, consistent with the other physics-derived events.
 - Pitch and roll are gravity-corrected. Yaw is relative and will drift because the board has no magnetometer.
 - Spectrum input, output and FFT processing stop while the spectrum page is hidden.
 

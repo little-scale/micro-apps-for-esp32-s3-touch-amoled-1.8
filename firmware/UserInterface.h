@@ -13,6 +13,8 @@ enum class UiEventType : uint8_t {
   WallCollision,
   BallCollision,
   ParticleWall,
+  MazeCollision,
+  MazeGoal,
   PendulumState,
   PendulumPing,
   PendulumActive,
@@ -72,6 +74,7 @@ class UserInterface {
     OctaveUp,
     Spectrum,
     FftCapture,
+    Maze,
     Page,
     Wifi,
     Ble,
@@ -131,6 +134,12 @@ class UserInterface {
   void updateParticles(float micEnergy, const ImuFrame &imu);
   float nextParticleRandom();
   void enqueueParticleWall(uint8_t wall, float normalizedSize);
+  void generateMaze();
+  uint32_t nextMazeRandom();
+  void updateMaze(const ImuFrame &imu);
+  void enqueueMazeCollision(uint8_t cellX, uint8_t cellY, uint8_t wall,
+                            float impact);
+  void enqueueMazeGoal();
   void enqueue(const UiEvent &event);
 
   void drawAll(const ControlState &state, bool wifiConnected, bool bleEnabled,
@@ -144,6 +153,7 @@ class UserInterface {
   void drawBall();
   void drawPendulum();
   void drawParticles();
+  void drawMaze();
   void drawKeyboard(const ControlState &state);
   void drawSpectrum(const ControlState &state);
   void flushKeyboardKey(uint8_t key);
@@ -234,6 +244,22 @@ class UserInterface {
   uint32_t particleRandomState_ = 0x8364a72du;
   uint32_t lastParticleUpdateUs_ = 0;
   bool particleDirty_ = true;
+  static constexpr uint8_t kMazeColumns = 9;
+  static constexpr uint8_t kMazeRows = 9;
+  static constexpr uint8_t kMazeCellCount = kMazeColumns * kMazeRows;
+  uint8_t mazeWalls_[kMazeCellCount] = {};
+  float mazeMarbleX_ = 0.0f;
+  float mazeMarbleY_ = 0.0f;
+  float mazeVelocityX_ = 0.0f;
+  float mazeVelocityY_ = 0.0f;
+  uint8_t mazeGoalColumn_ = 0;
+  uint8_t mazeGoalRow_ = 0;
+  uint32_t mazeRandomState_ = 0x4d415a45u;
+  uint32_t lastMazeUpdateUs_ = 0;
+  uint32_t mazeGoalReachedMs_ = 0;
+  uint32_t lastMazeCollisionMs_[4] = {};
+  bool mazeGoalReached_ = false;
+  bool mazeDirty_ = true;
   float xyFilteredPixelX_ = 0.0f;
   float xyFilteredPixelY_ = 0.0f;
   bool xyFilterInitialized_ = false;

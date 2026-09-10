@@ -98,6 +98,13 @@ void handleUiEvents() {
       case UiEventType::ParticleWall:
         osc.sendParticleWall(event.index, event.values[0]);
         break;
+      case UiEventType::MazeCollision:
+        osc.sendMazeCollision(event.numbers[0], event.numbers[1],
+                              event.index, event.values[0]);
+        break;
+      case UiEventType::MazeGoal:
+        osc.sendMazeGoal();
+        break;
       case UiEventType::PendulumState:
         osc.sendPendulum(event.index, event.values);
         break;

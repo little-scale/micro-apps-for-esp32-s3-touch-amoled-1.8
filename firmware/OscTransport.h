@@ -20,6 +20,8 @@ class OscTransport {
   void sendWallCollision(uint8_t ball, uint8_t wall, float impact);
   void sendBallCollision(uint8_t firstBall, uint8_t secondBall, float impact);
   void sendParticleWall(uint8_t wall, float normalizedSize);
+  void sendMazeCollision(uint8_t cellX, uint8_t cellY, uint8_t wall, float impact);
+  void sendMazeGoal();
   void sendMovementTrigger();
   void sendMicEnergy(float energy);
   void sendPendulum(uint8_t index, const float values[6]);

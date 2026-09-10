@@ -160,6 +160,19 @@ void OscTransport::sendParticleWall(uint8_t wall, float normalizedSize) {
   sendPacket(address, ",if", &normalizedSize, 1, &wallNumber, 1);
 }
 
+void OscTransport::sendMazeCollision(uint8_t cellX, uint8_t cellY,
+                                     uint8_t wall, float impact) {
+  const String address = "/" + settings_.deviceName + "/maze/collision";
+  const int32_t integers[] = {cellX, cellY, wall};
+  sendPacket(address, ",iiif", &impact, 1, integers, 3);
+}
+
+void OscTransport::sendMazeGoal() {
+  const String address = "/" + settings_.deviceName + "/maze/goal";
+  const int32_t reached = 1;
+  sendPacket(address, ",i", nullptr, 0, &reached, 1);
+}
+
 void OscTransport::sendMovementTrigger() {
   const String address = "/" + settings_.deviceName + "/movement";
   const int32_t triggered = 1;

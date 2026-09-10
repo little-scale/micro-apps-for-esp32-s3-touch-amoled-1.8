@@ -25,7 +25,7 @@ constexpr int16_t kPageX = 20;
 constexpr int16_t kPageY = 385;
 constexpr int16_t kPageW = 328;
 constexpr int16_t kPageH = 49;
-constexpr uint8_t kControlPageCount = 8;
+constexpr uint8_t kControlPageCount = 9;
 constexpr uint8_t kPageKeyboard = 0;
 constexpr uint8_t kPageButtons = 1;
 constexpr uint8_t kPageXy = 2;
@@ -34,6 +34,7 @@ constexpr uint8_t kPageBalls = 4;
 constexpr uint8_t kPagePendulums = 5;
 constexpr uint8_t kPageParticles = 6;
 constexpr uint8_t kPageSpectrum = 7;
+constexpr uint8_t kPageMaze = 8;
 constexpr int16_t kControlGap = 12;
 constexpr int16_t kButtonSize = 143;
 constexpr int16_t kButtonBorder = 25;
@@ -77,6 +78,23 @@ constexpr uint8_t kParticleMinimumSize = 3;
 constexpr uint8_t kParticleMaximumSize = 14;
 constexpr float kParticleSizeVariation = 1.25f;
 constexpr uint32_t kParticleDrawIntervalUs = 33333;
+constexpr int16_t kMazeCellSize = 32;
+constexpr int16_t kMazeSize = 9 * kMazeCellSize;
+constexpr int16_t kMazeX = (kControlW - kMazeSize) / 2;
+constexpr int16_t kMazeY = (kControlH - kMazeSize) / 2;
+constexpr int16_t kMazeWallWidth = 5;
+constexpr int16_t kMazeMarbleRadius = 8;
+constexpr int16_t kMazeGoalSize = 24;
+constexpr float kMazeGravityPixelScale = 230.0f;
+constexpr float kMazeMaximumVelocity = 220.0f;
+constexpr float kMazeCollisionThreshold = 8.0f;
+constexpr uint32_t kMazeCollisionCooldownMs = 100;
+constexpr uint32_t kMazeGoalHoldMs = 750;
+constexpr uint32_t kMazeRegenerateHoldMs = 3000;
+constexpr uint8_t kMazeWallTop = 0x01;
+constexpr uint8_t kMazeWallRight = 0x02;
+constexpr uint8_t kMazeWallBottom = 0x04;
+constexpr uint8_t kMazeWallLeft = 0x08;
 constexpr int16_t kLineWidth = 5;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr uint32_t kStreamIntervalMs = 20;
@@ -178,6 +196,8 @@ bool UserInterface::begin(const DeviceSettings &settings) {
   physicsBouncinessEdit_ = ballBounciness_;
   defaultDeviceName_ = hardwareDeviceName();
   resetBalls();
+  mazeRandomState_ ^= static_cast<uint32_t>(hardwareDeviceSuffix()) << 8;
+  generateMaze();
   Wire.begin(IIC_SDA, IIC_SCL);
 
   if (expander_.begin(0x20, &Wire)) {
@@ -1090,6 +1110,11 @@ void UserInterface::loop(ControlState &state, const ImuFrame &imu, float micEner
   } else {
     lastParticleUpdateUs_ = 0;
   }
+  if (controlPage_ == kPageMaze) {
+    updateMaze(imu);
+  } else {
+    lastMazeUpdateUs_ = 0;
+  }
   if (!dimmed_ && millis() - lastActivityMs_ >= dimAfterMs_) {
     display_->setBrightness(kDimBrightness);
     dimmed_ = true;
@@ -1137,6 +1162,8 @@ void UserInterface::loop(ControlState &state, const ImuFrame &imu, float micEner
     valueChanged = pendulumDirty_;
   } else if (controlPage_ == kPageParticles) {
     valueChanged = particleDirty_;
+  } else if (controlPage_ == kPageMaze) {
+    valueChanged = mazeDirty_;
   } else if (controlPage_ == kPageKeyboard) {
     for (uint8_t key = 0; key < 13; ++key) {
       const uint8_t note = keyboardBaseMidiNote_ + key;
@@ -1232,6 +1259,13 @@ UserInterface::TouchTarget UserInterface::hitTest(int16_t x, int16_t y) const {
       if (inside(x, y, kControlX, kControlY + kSpectrumCaptureY,
                  kControlW, kSpectrumCaptureHeight)) {
         return TouchTarget::FftCapture;
+      }
+      return TouchTarget::None;
+    }
+    if (controlPage_ == kPageMaze) {
+      if (inside(x, y, kControlX + kMazeX, kControlY + kMazeY,
+                 kMazeSize, kMazeSize)) {
+        return TouchTarget::Maze;
       }
       return TouchTarget::None;
     }
@@ -1378,6 +1412,12 @@ void UserInterface::moveTouch(int16_t x, int16_t y, ControlState &state) {
   if (activeTouch_ == TouchTarget::Pendulum && pendulumResetHoldEligible_ &&
       !longActionSent_ && millis() - touchStartedMs_ >= kResetHoldMs) {
     resetPendulumsToCentre();
+    longActionSent_ = true;
+    return;
+  }
+  if (activeTouch_ == TouchTarget::Maze && !longActionSent_ &&
+      millis() - touchStartedMs_ >= kMazeRegenerateHoldMs) {
+    generateMaze();
     longActionSent_ = true;
     return;
   }
@@ -2265,6 +2305,213 @@ void UserInterface::enqueueParticleWall(uint8_t wall, float normalizedSize) {
   enqueue(event);
 }
 
+uint32_t UserInterface::nextMazeRandom() {
+  mazeRandomState_ = mazeRandomState_ * 1664525u + 1013904223u;
+  return mazeRandomState_;
+}
+
+void UserInterface::generateMaze() {
+  for (uint8_t &walls : mazeWalls_) {
+    walls = kMazeWallTop | kMazeWallRight | kMazeWallBottom | kMazeWallLeft;
+  }
+
+  bool visited[kMazeCellCount] = {};
+  uint8_t stack[kMazeCellCount] = {};
+  uint8_t depth = 0;
+  const uint8_t startColumn = kMazeColumns / 2;
+  const uint8_t startRow = kMazeRows / 2;
+  const uint8_t start = startRow * kMazeColumns + startColumn;
+  stack[0] = start;
+  visited[start] = true;
+
+  static constexpr int8_t columnDelta[4] = {0, 1, 0, -1};
+  static constexpr int8_t rowDelta[4] = {-1, 0, 1, 0};
+  static constexpr uint8_t wall[4] = {
+      kMazeWallTop, kMazeWallRight, kMazeWallBottom, kMazeWallLeft};
+  static constexpr uint8_t oppositeWall[4] = {
+      kMazeWallBottom, kMazeWallLeft, kMazeWallTop, kMazeWallRight};
+
+  while (true) {
+    const uint8_t current = stack[depth];
+    const int8_t column = current % kMazeColumns;
+    const int8_t row = current / kMazeColumns;
+    uint8_t directions[4] = {};
+    uint8_t directionCount = 0;
+    for (uint8_t direction = 0; direction < 4; ++direction) {
+      const int8_t nextColumn = column + columnDelta[direction];
+      const int8_t nextRow = row + rowDelta[direction];
+      if (nextColumn < 0 || nextColumn >= kMazeColumns ||
+          nextRow < 0 || nextRow >= kMazeRows) {
+        continue;
+      }
+      const uint8_t next = nextRow * kMazeColumns + nextColumn;
+      if (!visited[next]) directions[directionCount++] = direction;
+    }
+
+    if (directionCount == 0) {
+      if (depth == 0) break;
+      --depth;
+      continue;
+    }
+
+    const uint8_t direction = directions[nextMazeRandom() % directionCount];
+    const uint8_t nextColumn = column + columnDelta[direction];
+    const uint8_t nextRow = row + rowDelta[direction];
+    const uint8_t next = nextRow * kMazeColumns + nextColumn;
+    mazeWalls_[current] &= ~wall[direction];
+    mazeWalls_[next] &= ~oppositeWall[direction];
+    visited[next] = true;
+    stack[++depth] = next;
+  }
+
+  switch (nextMazeRandom() & 0x03u) {
+    case 0:
+      mazeGoalColumn_ = 0;
+      mazeGoalRow_ = 0;
+      break;
+    case 1:
+      mazeGoalColumn_ = kMazeColumns - 1;
+      mazeGoalRow_ = 0;
+      break;
+    case 2:
+      mazeGoalColumn_ = 0;
+      mazeGoalRow_ = kMazeRows - 1;
+      break;
+    default:
+      mazeGoalColumn_ = kMazeColumns - 1;
+      mazeGoalRow_ = kMazeRows - 1;
+      break;
+  }
+
+  mazeMarbleX_ = (startColumn + 0.5f) * kMazeCellSize;
+  mazeMarbleY_ = (startRow + 0.5f) * kMazeCellSize;
+  mazeVelocityX_ = 0.0f;
+  mazeVelocityY_ = 0.0f;
+  mazeGoalReached_ = false;
+  mazeGoalReachedMs_ = 0;
+  lastMazeUpdateUs_ = 0;
+  memset(lastMazeCollisionMs_, 0, sizeof(lastMazeCollisionMs_));
+  mazeDirty_ = true;
+}
+
+void UserInterface::enqueueMazeCollision(uint8_t cellX, uint8_t cellY,
+                                         uint8_t wall, float impact) {
+  UiEvent event;
+  event.type = UiEventType::MazeCollision;
+  event.index = wall;
+  event.numbers[0] = cellX;
+  event.numbers[1] = cellY;
+  event.values[0] = constrain(impact, 0.0f, 1.0f);
+  enqueue(event);
+}
+
+void UserInterface::enqueueMazeGoal() {
+  UiEvent event;
+  event.type = UiEventType::MazeGoal;
+  enqueue(event);
+}
+
+void UserInterface::updateMaze(const ImuFrame &imu) {
+  if (mazeGoalReached_) {
+    if (millis() - mazeGoalReachedMs_ >= kMazeGoalHoldMs) generateMaze();
+    return;
+  }
+
+  const uint32_t now = micros();
+  if (lastMazeUpdateUs_ == 0) {
+    lastMazeUpdateUs_ = now;
+    return;
+  }
+  const uint32_t elapsedUs = static_cast<uint32_t>(now - lastMazeUpdateUs_);
+  if (elapsedUs < 8000) return;
+  lastMazeUpdateUs_ = now;
+  const float dt = constrain(elapsedUs / 1000000.0f, 0.001f, 0.04f);
+  const float damping = expf(-0.8f * dt);
+  mazeVelocityX_ -= imu.accel[0] * ballGravity_ * kMazeGravityPixelScale * dt;
+  mazeVelocityY_ += imu.accel[1] * ballGravity_ * kMazeGravityPixelScale * dt;
+  mazeVelocityX_ = constrain(mazeVelocityX_ * damping,
+                             -kMazeMaximumVelocity, kMazeMaximumVelocity);
+  mazeVelocityY_ = constrain(mazeVelocityY_ * damping,
+                             -kMazeMaximumVelocity, kMazeMaximumVelocity);
+
+  const float maximumTravel = max(fabsf(mazeVelocityX_ * dt),
+                                  fabsf(mazeVelocityY_ * dt));
+  const uint8_t steps = constrain(static_cast<int>(ceilf(
+      maximumTravel / (kMazeMarbleRadius * 0.5f))), 1, 8);
+  const float stepDt = dt / steps;
+
+  auto collision = [&](uint8_t cellX, uint8_t cellY, uint8_t wall,
+                       float velocity) {
+    const uint32_t nowMs = millis();
+    if (fabsf(velocity) >= kMazeCollisionThreshold &&
+        nowMs - lastMazeCollisionMs_[wall] >= kMazeCollisionCooldownMs) {
+      enqueueMazeCollision(cellX, cellY, wall,
+                           fabsf(velocity) / kMazeMaximumVelocity);
+      lastMazeCollisionMs_[wall] = nowMs;
+    }
+  };
+
+  for (uint8_t step = 0; step < steps; ++step) {
+    uint8_t column = constrain(static_cast<int>(mazeMarbleX_ / kMazeCellSize),
+                               0, static_cast<int>(kMazeColumns - 1));
+    uint8_t row = constrain(static_cast<int>(mazeMarbleY_ / kMazeCellSize),
+                            0, static_cast<int>(kMazeRows - 1));
+    const uint8_t cell = row * kMazeColumns + column;
+    const float left = column * kMazeCellSize;
+    const float right = left + kMazeCellSize;
+    float nextX = mazeMarbleX_ + mazeVelocityX_ * stepDt;
+    if ((mazeWalls_[cell] & kMazeWallLeft) &&
+        nextX - kMazeMarbleRadius < left) {
+      collision(column, row, 0, mazeVelocityX_);
+      nextX = left + kMazeMarbleRadius;
+      mazeVelocityX_ = fabsf(mazeVelocityX_) * ballBounciness_;
+    } else if ((mazeWalls_[cell] & kMazeWallRight) &&
+               nextX + kMazeMarbleRadius > right) {
+      collision(column, row, 1, mazeVelocityX_);
+      nextX = right - kMazeMarbleRadius;
+      mazeVelocityX_ = -fabsf(mazeVelocityX_) * ballBounciness_;
+    }
+    mazeMarbleX_ = constrain(nextX, static_cast<float>(kMazeMarbleRadius),
+                             static_cast<float>(kMazeSize - kMazeMarbleRadius));
+
+    column = constrain(static_cast<int>(mazeMarbleX_ / kMazeCellSize),
+                       0, static_cast<int>(kMazeColumns - 1));
+    row = constrain(static_cast<int>(mazeMarbleY_ / kMazeCellSize),
+                    0, static_cast<int>(kMazeRows - 1));
+    const uint8_t verticalCell = row * kMazeColumns + column;
+    const float top = row * kMazeCellSize;
+    const float bottom = top + kMazeCellSize;
+    float nextY = mazeMarbleY_ + mazeVelocityY_ * stepDt;
+    if ((mazeWalls_[verticalCell] & kMazeWallTop) &&
+        nextY - kMazeMarbleRadius < top) {
+      collision(column, row, 2, mazeVelocityY_);
+      nextY = top + kMazeMarbleRadius;
+      mazeVelocityY_ = fabsf(mazeVelocityY_) * ballBounciness_;
+    } else if ((mazeWalls_[verticalCell] & kMazeWallBottom) &&
+               nextY + kMazeMarbleRadius > bottom) {
+      collision(column, row, 3, mazeVelocityY_);
+      nextY = bottom - kMazeMarbleRadius;
+      mazeVelocityY_ = -fabsf(mazeVelocityY_) * ballBounciness_;
+    }
+    mazeMarbleY_ = constrain(nextY, static_cast<float>(kMazeMarbleRadius),
+                             static_cast<float>(kMazeSize - kMazeMarbleRadius));
+  }
+
+  const float goalX = (mazeGoalColumn_ + 0.5f) * kMazeCellSize;
+  const float goalY = (mazeGoalRow_ + 0.5f) * kMazeCellSize;
+  const float goalDx = mazeMarbleX_ - goalX;
+  const float goalDy = mazeMarbleY_ - goalY;
+  const float goalRadius = kMazeGoalSize * 0.45f;
+  if (goalDx * goalDx + goalDy * goalDy <= goalRadius * goalRadius) {
+    mazeGoalReached_ = true;
+    mazeGoalReachedMs_ = millis();
+    mazeVelocityX_ = 0.0f;
+    mazeVelocityY_ = 0.0f;
+    enqueueMazeGoal();
+  }
+  mazeDirty_ = true;
+}
+
 void UserInterface::enqueue(const UiEvent &event) {
   const uint8_t next = (eventWrite_ + 1) % kEventQueueSize;
   if (next == eventRead_) return;
@@ -2442,6 +2689,8 @@ void UserInterface::drawCurrentPage(const ControlState &state) {
     drawPendulum();
   } else if (controlPage_ == kPageParticles) {
     drawParticles();
+  } else if (controlPage_ == kPageMaze) {
+    drawMaze();
   } else {
     drawSpectrum(state);
   }
@@ -2706,6 +2955,63 @@ void UserInterface::drawParticles() {
     target->fillRect(x, y, size, size, white);
   }
   particleDirty_ = false;
+  if (xyCanvas_) xyCanvas_->flush();
+}
+
+void UserInterface::drawMaze() {
+  Arduino_GFX *target = xyCanvas_ ? static_cast<Arduino_GFX *>(xyCanvas_)
+                                  : static_cast<Arduino_GFX *>(display_);
+  const int16_t originX = (xyCanvas_ ? 0 : kControlX) + kMazeX;
+  const int16_t originY = (xyCanvas_ ? kControlCanvasInsetY : kControlY) + kMazeY;
+  const uint16_t white = rgb565(255, 255, 255);
+  target->fillRect(xyCanvas_ ? 0 : kControlX,
+                   xyCanvas_ ? kControlCanvasInsetY : kControlY,
+                   kControlW, kControlH, backgroundColor_);
+
+  const int16_t goalCenterX = originX +
+      mazeGoalColumn_ * kMazeCellSize + kMazeCellSize / 2;
+  const int16_t goalCenterY = originY +
+      mazeGoalRow_ * kMazeCellSize + kMazeCellSize / 2;
+  target->fillRect(goalCenterX - kMazeGoalSize / 2,
+                   goalCenterY - kMazeGoalSize / 2,
+                   kMazeGoalSize, kMazeGoalSize, white);
+  if (!mazeGoalReached_) {
+    target->fillRect(goalCenterX - kMazeGoalSize / 2 + kLineWidth,
+                     goalCenterY - kMazeGoalSize / 2 + kLineWidth,
+                     kMazeGoalSize - 2 * kLineWidth,
+                     kMazeGoalSize - 2 * kLineWidth, backgroundColor_);
+  }
+
+  const int16_t halfWall = kMazeWallWidth / 2;
+  for (uint8_t row = 0; row < kMazeRows; ++row) {
+    for (uint8_t column = 0; column < kMazeColumns; ++column) {
+      const uint8_t walls = mazeWalls_[row * kMazeColumns + column];
+      const int16_t x = originX + column * kMazeCellSize;
+      const int16_t y = originY + row * kMazeCellSize;
+      if (walls & kMazeWallTop) {
+        target->fillRect(x - halfWall, y - halfWall,
+                         kMazeCellSize + kMazeWallWidth, kMazeWallWidth, white);
+      }
+      if (walls & kMazeWallLeft) {
+        target->fillRect(x - halfWall, y - halfWall,
+                         kMazeWallWidth, kMazeCellSize + kMazeWallWidth, white);
+      }
+      if (column == kMazeColumns - 1 && (walls & kMazeWallRight)) {
+        target->fillRect(x + kMazeCellSize - halfWall, y - halfWall,
+                         kMazeWallWidth, kMazeCellSize + kMazeWallWidth, white);
+      }
+      if (row == kMazeRows - 1 && (walls & kMazeWallBottom)) {
+        target->fillRect(x - halfWall, y + kMazeCellSize - halfWall,
+                         kMazeCellSize + kMazeWallWidth, kMazeWallWidth, white);
+      }
+    }
+  }
+
+  const int16_t marbleX = originX + roundf(mazeMarbleX_);
+  const int16_t marbleY = originY + roundf(mazeMarbleY_);
+  target->fillCircle(marbleX, marbleY, kMazeMarbleRadius,
+                     mazeGoalReached_ ? backgroundColor_ : white);
+  mazeDirty_ = false;
   if (xyCanvas_) xyCanvas_->flush();
 }
 
