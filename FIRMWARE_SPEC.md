@@ -16,7 +16,7 @@ Computer-side Max, Ableton, MIDI conversion, and teaching patches are outside th
 
 The normal interface uses a black background and contains:
 
-- A minimal top strip with settings/Wi-Fi, BLE, raw IMU-output, and battery state
+- A minimal top strip with settings/Wi-Fi, BLE, raw IMU-output, microphone-output, and battery state
 - Page 1 contains a velocity-sensitive one-octave musical keyboard with local octave controls
 - Page 2 contains four blank momentary buttons
 - Page 3 contains one XY controller
@@ -330,7 +330,7 @@ Tapping the cog icon opens a full-screen `NETWORK` / `OSC` / `DEVICE` / `PHYSICS
 - Networks are scanned asynchronously, deduplicated and ordered by signal strength.
 - Five networks are shown per page, with signal and security indicators.
 - The user selects a network and enters its password with an on-screen keyboard.
-- The keyboard provides lowercase, uppercase, digits, symbols, space and delete.
+- The keyboard uses wide seven-key-or-fewer rows and provides lowercase, uppercase, digits, symbols, space and delete across `ABC`, `123`, and `MORE` modes.
 - A `SHOW`/`HIDE` control reveals or masks the entered password; each newly selected network starts masked.
 - A successful connection is saved and returns to the controller automatically.
 - A failed connection returns to password entry with a red password frame.

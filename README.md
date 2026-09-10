@@ -6,7 +6,7 @@ The current eight-page implementation compiles for the V2 hardware and has been 
 
 ## What is on the screen
 
-- Settings/Wi-Fi, BLE, raw IMU-output and battery status in the top row
+- Settings/Wi-Fi, BLE, raw IMU-output, microphone-output and battery status in the top row
 - Page 1: a velocity-sensitive one-octave keyboard with octave down/up controls and single-touch glissando
 - Page 2: four blank momentary buttons
 - Page 3: one normalized XY pad
@@ -25,11 +25,15 @@ With no saved Wi-Fi network, the device automatically opens its on-screen networ
 
 - Select a visible network from the signal-sorted list.
 - Use `MORE` to move through additional results or `SCAN` to refresh.
-- Enter the password with the on-screen keyboard. `ABC` changes case, `#+=` opens symbols, space/delete are available, and `SHOW`/`HIDE` reveals or masks the entered password.
+- Enter the password with the large on-screen keyboard. `ABC` changes case, `123` opens common digits and symbols, `MORE` opens the remaining symbols, and space/delete are always available. `SHOW`/`HIDE` reveals or masks the entered password.
 - Tap `CONNECT`. Success returns to the controller automatically; failure returns to the password screen with a red frame.
 - `EXIT` or 150 seconds without input returns to the controller.
 
 The device does not create a configuration hotspot. The `OSC` screen edits the target IPv4 address, output port and device input port with a numeric keypad; saving applies the new routing immediately. The `DEVICE` screen edits the shared Wi-Fi hostname, BLE advertisement name and OSC address root. Saving a device name restarts the board so all transports adopt it together. The `PHYSICS` screen sets gravity for the ball and pendulum simulations plus ball collision bounciness. IMU options and reset will move to additional on-device screens later.
+
+### Optional private provisioning
+
+For a set of boards that should all join the same network and send OSC to the same computer, copy `firmware/Provisioning.local.h.example` to `firmware/Provisioning.local.h` and enter the private Wi-Fi and OSC values there. The local file is ignored by Git. A numbered provisioning revision applies those values once per board; increase it only when a later build should deliberately replace the saved network and OSC settings. Provisioned binaries also contain the password and should be kept private.
 
 Tap the BLE icon to enable or disable BLE; hold it to clear bonds and advertise again.
 Tap the adjacent three-axis IMU icon to enable or disable periodic raw IMU output over
@@ -37,6 +41,9 @@ OSC and BLE. It is pink when enabled, defaults to off, and the choice is saved. 
 whenever it is enabled, while the settings badge uses green for a connected Wi-Fi network.
 This does not disable motion-driven
 pages or the movement trigger; it only suppresses the nine-float IMU stream when it is not needed.
+Tap the microphone icon to enable or disable periodic microphone-energy output over OSC and BLE.
+It defaults to off and the choice is saved. Disabling it suppresses only `mic0`; microphone particles,
+FFT capture and their derived events continue to work locally.
 
 ## OSC message reference
 
@@ -117,7 +124,7 @@ released. Collision, movement, microphone, particle, pendulum and IMU messages a
 
 - XY and fader movement is limited to 50 messages per second, plus a final value on release.
 - The physical keyboard is single-touch and supports glissando; remote notes may be polyphonic.
-- Microphone energy is sent at 25 Hz. Raw audio is never transmitted or stored.
+- When its top-row toggle is enabled, microphone energy is sent at 25 Hz. Raw audio is never transmitted or stored.
 - Pendulum state is limited to 25 Hz while drawing or simulating.
 - IMU output is 25 Hz by default or 50 Hz when selected. It is disabled by default and controlled by the pink IMU badge.
 - Acceleration uses the logical screen frame: +X right, +Y toward the top and +Z out of the display.
@@ -182,13 +189,15 @@ Yaw is relative and will drift because the QMI8658 is a six-axis IMU with no mag
 ## Repository layout
 
 - `firmware/` — application source
+- `firmware/Provisioning.local.h.example` — safe template for optional private fleet provisioning
 - `scripts/` — reproducible build and explicit-port flash commands
 - `vendor/waveshare-v2/` — pinned Waveshare hardware dependencies and their licences
 - `docs/` — rendered handover document and diagrams
 - `tools/` — handover-document generator
 
 Generated firmware, compiler caches and machine-local files are intentionally ignored. Runtime
-Wi-Fi credentials are entered on the device and are never written into this repository.
+Wi-Fi credentials are entered on the device; optional build-time credentials live only in the
+ignored `firmware/Provisioning.local.h` file and must never be committed.
 
 ## Licence
 

@@ -5,8 +5,8 @@
 **Display:** 368 × 448 portrait AMOLED using CO5300  
 **Touch:** CST820 single-point capacitive touch  
 **Current firmware:** eight active performance pages, on-device Wi-Fi and OSC setup, BLE GATT, IMU, microphone energy, FFT capture, remote control, and no-echo routing  
-**Verified build size:** 1,384,495 bytes of a 3,145,728-byte application partition, 44 percent  
-**Verified RAM use:** 99,292 bytes of 327,680 bytes of static dynamic-memory allocation, 30 percent  
+**Verified build size:** 1,386,659 bytes of a 3,145,728-byte application partition, 44 percent
+**Verified RAM use:** 99,340 bytes of 327,680 bytes of static dynamic-memory allocation, 30 percent
 
 This is the main handover for anyone continuing the firmware in a fresh development context. Read it together with [README.md](README.md), [FIRMWARE_SPEC.md](FIRMWARE_SPEC.md), and [PROTOCOL.md](PROTOCOL.md). The specification describes intended behaviour; the protocol reference is the contract with Max, Ableton, or another host; this document explains why the firmware is shaped as it is and how to extend it safely.
 
@@ -78,6 +78,8 @@ Do not guess pins from a V1 tutorial. Keep the copied vendor libraries under `ve
 | `firmware/OscTransport.*` | OSC 1.0 UDP encoding, decoding, addresses and validation |
 | `firmware/BleTransport.*` | BLE advertising, GATT service, packet encoding, decoding and IMU fragmentation |
 | `firmware/ConfigStore.*` | Nonvolatile Preferences storage and validation |
+| `firmware/Provisioning.h` | Optional compile-time private Wi-Fi/OSC defaults with revision gating |
+| `firmware/Provisioning.local.h.example` | Checked-in provisioning template; the populated `.local.h` is ignored |
 | `firmware/ConfigPortal.*` | Earlier portal component retained in source but not used by the current no-hotspot flow |
 | `vendor/waveshare-v2` | Pinned board support libraries copied from the V2 examples |
 | `scripts/build.sh` | Reproducible Arduino CLI build with the correct board options |
@@ -131,11 +133,11 @@ The serial device name can change after reconnecting. Never bake it into the scr
 build/output/firmware.ino.merged.bin
 ```
 
-The September 2026 eight-page baseline reports 1,384,495 program bytes, or 44 percent of the 3 MB application partition. Static global allocation is 99,300 bytes, or 30 percent of internal RAM. The 8 MB PSRAM is used at runtime for display canvases and is not represented by that global allocation figure.
+The September 2026 eight-page baseline with the larger setup keyboard, optional provisioning and saved sensor-output toggles reports 1,386,659 program bytes, or 44 percent of the 3 MB application partition. Static global allocation is 99,340 bytes, or 30 percent of internal RAM. The 8 MB PSRAM is used at runtime for display canvases and is not represented by that global allocation figure.
 
 ### Flash and recovery notes
 
-- A normal upload changes firmware while preserving Preferences data such as Wi-Fi credentials and device name.
+- A normal upload changes firmware while preserving Preferences data such as Wi-Fi credentials and device name. A private provisioning header overrides Wi-Fi/OSC values only when its numbered revision is newer than the board's stored Micro Apps provisioning revision.
 - If a bad sketch prevents automatic upload, hold BOOT while connecting or resetting, then retry with the detected serial port.
 - A full erase is materially different from a normal flash because it removes saved settings. Use it only intentionally.
 - Waveshare publishes demo and factory-style binaries in its resource area, so the project does not retain a factory image.
@@ -266,7 +268,8 @@ default is false. Only the periodic OSC `imu0` packet and BLE IMU notifications 
 pitch/roll/yaw calculation, page physics, motion wake, and the compact movement trigger continue.
 
 The top-row colour identities are intentionally stable: green means settings/Wi-Fi connected,
-amber means BLE enabled, and pink means raw IMU output enabled. BLE no longer changes from amber
+amber means BLE enabled, pink means raw IMU output enabled, and cyan means microphone-energy
+output enabled. BLE no longer changes from amber
 to green merely because a client connects; connection state remains available internally.
 
 ## Microphone and FFT
@@ -274,6 +277,11 @@ to green merely because a client connects; connection state remains available in
 `AudioService` configures the ES8311 for 16 kHz, 16-bit stereo I2S and chooses the louder received channel. Audio is processed locally; raw samples are neither stored nor sent.
 
 Microphone energy is short-window RMS after DC removal. An adaptive ambient floor, noise gate, fast attack, slower release and a square-root loudness curve produce a stable normalized density value from 0 to 1. This is designed for breath and activity rather than calibrated sound-pressure measurement.
+
+Periodic microphone-energy transport is opt-in and defaults to off. The microphone badge beside
+the IMU badge saves `micOutputEnabled` and gates only OSC `mic0` plus the equivalent BLE packet.
+Audio capture and all local consumers continue running, so the particle and FFT pages behave
+normally and particle wall events remain available while the badge is grey.
 
 FFT capture is intentionally different:
 
@@ -297,7 +305,7 @@ The cog badge opens a fully on-device settings interface. There is no temporary 
 The settings flow supports:
 
 - scanning and paging through visible networks
-- password entry with case and symbol keyboards
+- password entry with large seven-key-or-fewer rows and separate letters, common-symbol, and additional-symbol modes
 - masked or visible password text
 - connect success and failure states
 - OSC target IPv4 address, transmit port and receive port
@@ -322,19 +330,23 @@ Saving a new name restarts the board so every transport adopts it consistently. 
 
 Preferences use namespace `classroom` and keys visible in `ConfigStore.cpp`. Passwords are stored in ESP32 nonvolatile preferences as plain configuration data, not as a hardened credential vault. That is acceptable for this explicitly classroom-oriented design but should be reconsidered for sensitive networks.
 
+For repeated classroom-board flashing, `Provisioning.h` optionally imports an ignored `Provisioning.local.h`. A populated private file supplies the shared SSID, password, OSC host, and ports. `ConfigStore` records its revision under the Micro Apps-specific `micro_prov` key, so a revision is applied only once and does not collide with TouchOSC Parser Mini's provisioning marker. Increment the revision only for an intentional fleet-wide settings replacement. Never commit the populated header or distribute its compiled binary publicly, because the password is embedded in both.
+
+Wi-Fi scanning deliberately suspends auto-reconnect, pauses briefly after station mode is selected, and retries empty or failed asynchronous scans up to twice. Closing Settings restores auto-reconnect and the last selected credentials. A release guard consumes the physical touch that closed Settings before normal page hit-testing resumes; without it, the same held contact can activate the underlying performance control.
+
 ## OSC contract
 
 OSC 1.0 messages are sent in UDP datagrams. OSC integers and floats are encoded big-endian as required by the [OSC 1.0 specification](https://opensoundcontrol.stanford.edu/spec-1_0.html). The default computer receive port is 9000 and device receive port is 9001.
 
-The canonical address root is the device name. For `device-8428`, examples are:
+The canonical address root is the device name. For `device-1234`, examples are:
 
 ```text
-/device-8428/xy0 0.25 0.80
-/device-8428/fader2 0.61
-/device-8428/button0 1
-/device-8428/button0 0
-/device-8428/imu0 ax ay az gx gy gz pitch roll yaw
-/device-8428/background 24 0 80
+/device-1234/xy0 0.25 0.80
+/device-1234/fader2 0.61
+/device-1234/button0 1
+/device-1234/button0 0
+/device-1234/imu0 ax ay az gx gy gz pitch roll yaw
+/device-1234/background 24 0 80
 ```
 
 ### Device to computer summary
@@ -369,9 +381,9 @@ Max’s built-in [`udpreceive`](https://docs.cycling74.com/reference/udpreceive/
 ```text
 [udpreceive 9000]
         |
-[route /device-8428/xy0 /device-8428/imu0 /device-8428/movement]
+[route /device-1234/xy0 /device-1234/imu0 /device-1234/movement]
 
-[/device-8428/background 255 0 80]
+[/device-1234/background 255 0 80]
         |
 [udpsend 192.168.1.123 9001]
 ```
@@ -637,12 +649,15 @@ Run this list after every new page or protocol change.
 - No previous-page pixels remain after page changes.
 - Fast vertical and horizontal motion show no trails or conspicuous white gaps.
 - Touch release is always observed for buttons and notes.
+- Exiting Settings leaves app touch responsive and does not activate the control underneath.
 
 ### Wi-Fi and OSC
 
 - Cog opens a fully redrawn settings screen from every performance page.
 - Network scan can be cancelled or allowed to time out.
+- A scan on an already configured board finds nearby networks and reconnects after exit.
 - Password show and hide works.
+- Every letter/symbol mode is reachable and the wide keys register near their edges.
 - Target address and both ports save and take effect.
 - Device name updates hostname, OSC root, and BLE name after restart.
 - OSC reaches the correct computer and incoming controls update the display.

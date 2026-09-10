@@ -17,6 +17,7 @@ void ConfigStore::load(DeviceSettings &settings) {
   settings.oscReceivePort = preferences_.getUShort("osc_rx", settings.oscReceivePort);
   settings.imuRateHz = preferences_.getUChar("imu_hz", settings.imuRateHz);
   settings.imuOutputEnabled = preferences_.getBool("imu_out", settings.imuOutputEnabled);
+  settings.micOutputEnabled = preferences_.getBool("mic_out", settings.micOutputEnabled);
   settings.bleEnabled = preferences_.getBool("ble", settings.bleEnabled);
   settings.dimAfterMs = preferences_.getULong("dim_ms", settings.dimAfterMs);
   settings.ballGravity = preferences_.getFloat("ball_grav", settings.ballGravity);
@@ -46,6 +47,7 @@ bool ConfigStore::save(const DeviceSettings &settings) {
   ok &= preferences_.putUShort("osc_rx", settings.oscReceivePort) == sizeof(uint16_t);
   ok &= preferences_.putUChar("imu_hz", settings.imuRateHz) == sizeof(uint8_t);
   ok &= preferences_.putBool("imu_out", settings.imuOutputEnabled) == sizeof(bool);
+  ok &= preferences_.putBool("mic_out", settings.micOutputEnabled) == sizeof(bool);
   ok &= preferences_.putBool("ble", settings.bleEnabled) == sizeof(bool);
   ok &= preferences_.putULong("dim_ms", settings.dimAfterMs) == sizeof(uint32_t);
   ok &= preferences_.putFloat("ball_grav", settings.ballGravity) == sizeof(float);
@@ -56,6 +58,16 @@ bool ConfigStore::save(const DeviceSettings &settings) {
   ok &= preferences_.putFloat("pitch_0", settings.pitchOffset) == sizeof(float);
   ok &= preferences_.putFloat("roll_0", settings.rollOffset) == sizeof(float);
   return ok;
+}
+
+uint32_t ConfigStore::provisioningRevision() {
+  // This project has its own revision marker even though both firmwares share
+  // the same settings namespace on a board.
+  return preferences_.getULong("micro_prov", 0);
+}
+
+bool ConfigStore::saveProvisioningRevision(uint32_t revision) {
+  return preferences_.putULong("micro_prov", revision) == sizeof(uint32_t);
 }
 
 void ConfigStore::clear() {

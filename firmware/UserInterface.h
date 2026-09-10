@@ -22,6 +22,7 @@ enum class UiEventType : uint8_t {
   PhysicsSettings,
   ToggleBle,
   ToggleImuOutput,
+  ToggleMicOutput,
   ClearBleBonds,
 };
 
@@ -41,7 +42,7 @@ class UserInterface {
   void loop(ControlState &state, const ImuFrame &imu, float micEnergy,
             const float spectrum[32], bool spectrumReady,
             bool wifiConnected, bool bleEnabled, bool bleConnected,
-            bool imuOutputEnabled);
+            bool imuOutputEnabled, bool micOutputEnabled);
   bool popEvent(UiEvent &event);
   void openWifiSetup(bool openNetworkPicker = false);
   bool wifiSetupActive() const { return wifiSetupActive_; }
@@ -75,6 +76,7 @@ class UserInterface {
     Wifi,
     Ble,
     ImuOutput,
+    MicOutput,
   };
 
   void readTouch(ControlState &state);
@@ -84,6 +86,7 @@ class UserInterface {
   void readWifiSetupTouch();
   void handleWifiSetupTap(int16_t x, int16_t y);
   void startWifiScan();
+  void beginWifiScanAttempt();
   void serviceWifiSetup();
   void closeWifiSetup();
   void drawWifiSetup();
@@ -97,6 +100,7 @@ class UserInterface {
   bool oscSettingsValid() const;
   bool deviceNameValid() const;
   const char *keyboardRow(uint8_t row) const;
+  const char *deviceKeyboardRow(uint8_t row) const;
   TouchTarget hitTest(int16_t x, int16_t y) const;
   void beginTouch(TouchTarget target, int16_t x, int16_t y, ControlState &state);
   void moveTouch(int16_t x, int16_t y, ControlState &state);
@@ -130,9 +134,9 @@ class UserInterface {
   void enqueue(const UiEvent &event);
 
   void drawAll(const ControlState &state, bool wifiConnected, bool bleEnabled,
-               bool bleConnected, bool imuOutputEnabled);
+               bool bleConnected, bool imuOutputEnabled, bool micOutputEnabled);
   void drawTop(bool wifiConnected, bool bleEnabled, bool bleConnected,
-               bool imuOutputEnabled);
+               bool imuOutputEnabled, bool micOutputEnabled);
   void drawCurrentPage(const ControlState &state);
   void drawXy(const ControlState &state);
   void drawFaders(const ControlState &state);
@@ -165,6 +169,8 @@ class UserInterface {
 
   TouchTarget activeTouch_ = TouchTarget::None;
   bool touching_ = false;
+  bool ignoreTouchUntilRelease_ = false;
+  uint32_t ignoreTouchStartedMs_ = 0;
   bool longActionSent_ = false;
   bool touchValueChanged_ = false;
   uint32_t touchStartedMs_ = 0;
@@ -255,6 +261,7 @@ class UserInterface {
   bool drawnBleEnabled_ = false;
   bool drawnBleConnected_ = false;
   bool drawnImuOutputEnabled_ = false;
+  bool drawnMicOutputEnabled_ = false;
   int drawnBatteryPercent_ = -2;
   bool drawnCharging_ = false;
 
@@ -276,7 +283,8 @@ class UserInterface {
   bool wifiSetupTouching_ = false;
   bool wifiScanPending_ = false;
   bool wifiShift_ = false;
-  bool wifiSymbols_ = false;
+  uint8_t wifiKeyboardMode_ = 0;
+  bool deviceKeyboardNumbers_ = false;
   bool wifiPasswordVisible_ = false;
   bool wifiPasswordError_ = false;
   WifiSetupPage wifiSetupPage_ = WifiSetupPage::Scanning;
@@ -287,6 +295,8 @@ class UserInterface {
   uint8_t wifiNetworkPage_ = 0;
   String wifiSelectedSsid_;
   String wifiPassword_;
+  String savedWifiSsid_;
+  String savedWifiPassword_;
   String oscTargetText_;
   String oscSendPortText_;
   String oscReceivePortText_;
@@ -301,6 +311,7 @@ class UserInterface {
   uint32_t wifiSetupLastActivityMs_ = 0;
   uint32_t wifiScanStartedMs_ = 0;
   uint32_t wifiScanRetryAtMs_ = 0;
+  uint8_t wifiScanAttempt_ = 0;
   uint32_t wifiConnectStartedMs_ = 0;
   uint32_t wifiConnectedShownMs_ = 0;
 

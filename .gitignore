@@ -1,6 +1,7 @@
 # Reproducible Arduino build output
 /build/
 /firmware/build/
+/firmware/Provisioning.local.h
 
 # Local editor, OS and Python files
 .DS_Store

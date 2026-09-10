@@ -42,7 +42,9 @@ by the `active` message. Pendulum output is currently OSC-only.
 
 Microphone energy is derived from short-window RMS with adaptive ambient-noise removal,
 fast attack and slower release. It is a normalized density/loudness measure rather than a
-waveform sample. Raw audio is neither transmitted nor stored. `mic0` is sent at 25 Hz.
+waveform sample. Raw audio is neither transmitted nor stored. `mic0` is sent at 25 Hz only
+while the saved microphone-output toggle is enabled; it defaults to off. Disabling this stream
+does not disable local audio analysis, particles, FFT capture, or particle wall events.
 Each particle disappears when it reaches the particle arena boundary and emits one
 OSC-only wall ping. Wall numbering matches the ball arena: 0 left, 1 right, 2 top,
 and 3 bottom. The second argument is the particle's normalized size: 0 for the

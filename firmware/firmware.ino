@@ -8,6 +8,7 @@
 #include "ConfigStore.h"
 #include "ImuService.h"
 #include "OscTransport.h"
+#include "Provisioning.h"
 #include "UserInterface.h"
 
 namespace {
@@ -148,6 +149,11 @@ void handleUiEvents() {
         configStore.save(settings);
         ui.wake();
         break;
+      case UiEventType::ToggleMicOutput:
+        settings.micOutputEnabled = !settings.micOutputEnabled;
+        configStore.save(settings);
+        ui.wake();
+        break;
       case UiEventType::ClearBleBonds:
         ble.clearBonds();
         ui.wake();
@@ -181,16 +187,38 @@ void setup() {
   Serial.begin(115200);
   delay(100);
 
-  if (configStore.begin()) configStore.load(settings);
-  char uniqueName[16];
-  char legacyName[20];
-  const uint16_t uniqueSuffix = static_cast<uint16_t>(ESP.getEfuseMac());
-  snprintf(uniqueName, sizeof(uniqueName), "device-%04x", uniqueSuffix);
-  snprintf(legacyName, sizeof(legacyName), "classroom-%04x", uniqueSuffix);
+  const bool configReady = configStore.begin();
+  if (configReady) configStore.load(settings);
+  const uint32_t storedProvisioningRevision =
+      configReady ? configStore.provisioningRevision() : 0;
+  const bool applyProvisioning =
+      Provisioning::available() &&
+      Provisioning::revision() > storedProvisioningRevision;
+  if (applyProvisioning) Provisioning::apply(settings);
+
+  const String uniqueName = hardwareDeviceName();
+  char correctedLegacyName[20];
+  char buggyDeviceName[16];
+  char buggyLegacyName[20];
+  const uint16_t buggySuffix = static_cast<uint16_t>(ESP.getEfuseMac());
+  snprintf(correctedLegacyName, sizeof(correctedLegacyName), "classroom-%04x",
+           hardwareDeviceSuffix());
+  snprintf(buggyDeviceName, sizeof(buggyDeviceName), "device-%04x", buggySuffix);
+  snprintf(buggyLegacyName, sizeof(buggyLegacyName), "classroom-%04x", buggySuffix);
+  bool generatedUniqueName = false;
   if (settings.deviceName == "device-0000" || settings.deviceName == "classroom-01" ||
-      settings.deviceName == legacyName) {
+      settings.deviceName == correctedLegacyName || settings.deviceName == buggyDeviceName ||
+      settings.deviceName == buggyLegacyName) {
     settings.deviceName = uniqueName;
-    configStore.save(settings);
+    generatedUniqueName = true;
+  }
+  if (configReady && (applyProvisioning || generatedUniqueName)) {
+    const bool settingsSaved = configStore.save(settings);
+    if (settingsSaved && applyProvisioning) {
+      configStore.saveProvisioningRevision(Provisioning::revision());
+      Serial.printf("local provisioning applied revision=%lu\n",
+                    static_cast<unsigned long>(Provisioning::revision()));
+    }
   }
   const bool uiReady = ui.begin(settings);
   beginWifi();
@@ -212,8 +240,10 @@ void loop() {
   serviceMdns();
 
   if (audio.update()) {
-    osc.sendMicEnergy(audio.energy());
-    ble.sendMicEnergy(audio.energy());
+    if (settings.micOutputEnabled) {
+      osc.sendMicEnergy(audio.energy());
+      ble.sendMicEnergy(audio.energy());
+    }
   }
 
   float spectrum[32] = {};
@@ -235,7 +265,8 @@ void loop() {
 
   ui.loop(controls, imuFrame, audio.energy(), spectrum, spectrumReady,
           WiFi.status() == WL_CONNECTED,
-          ble.enabled(), ble.connected(), settings.imuOutputEnabled);
+          ble.enabled(), ble.connected(), settings.imuOutputEnabled,
+          settings.micOutputEnabled);
   audio.setFftEnabled(ui.spectrumPageActive() && ui.fftCaptureActive());
   handleUiEvents();
 
